@@ -67,7 +67,7 @@ use polkadot_cli::{
 };
 use polkadot_network::validation::{SessionParams, ValidationNetwork};
 use polkadot_network::NetworkService;
-use tokio::timer::Timeout;
+use tokio_timer::Timeout;
 use consensus_common::SelectChain;
 use aura::AuraApi;
 
@@ -271,6 +271,7 @@ impl<P, E> IntoExit for CollationNode<P, E> where
 	}
 }
 
+#[cfg(not(target_os = "unknown"))]
 impl<P, E> Worker for CollationNode<P, E> where
 	P: BuildParachainContext + Send + 'static,
 	P::ParachainContext: Send + 'static,

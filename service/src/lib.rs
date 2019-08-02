@@ -44,6 +44,8 @@ pub use polkadot_primitives::parachain::{CollatorId, ParachainHost};
 pub use primitives::Blake2Hasher;
 pub use sr_primitives::traits::ProvideRuntimeApi;
 pub use chain_spec::ChainSpec;
+
+#[cfg(not(target_os = "unknown"))]
 pub use consensus::run_validation_worker;
 
 /// All configuration for the polkadot node.
@@ -303,7 +305,7 @@ service::construct_service_factory! {
 					client.clone(),
 					select_chain,
 					block_import,
-					Arc::new(proposer_factory),
+					proposer_factory,
 					service.network(),
 					service.config.custom.inherent_data_providers.clone(),
 					service.config.force_authoring,

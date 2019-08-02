@@ -39,7 +39,8 @@ use polkadot_primitives::parachain::{CandidateReceipt, ParachainHost};
 use runtime_primitives::traits::{ProvideRuntimeApi, Header as HeaderT};
 use aura::AuraApi;
 
-use tokio::{timer::Interval, runtime::current_thread::Runtime as LocalRuntime};
+use tokio_timer::Interval;
+//use tokio::runtime::current_thread::Runtime as LocalRuntime;
 use log::{warn, debug};
 
 use super::{Network, Collators};
@@ -109,6 +110,32 @@ pub(crate) struct ServiceHandle {
 }
 
 /// Create and start a new instance of the attestation service.
+#[cfg(target_os = "unknown")]
+pub(crate) fn start<C, N, P, SC>(
+	client: Arc<P>,
+	select_chain: SC,
+	parachain_validation: Arc<crate::ParachainValidation<C, N, P>>,
+	thread_pool: TaskExecutor,
+	key: Arc<ed25519::Pair>,
+	extrinsic_store: ExtrinsicStore,
+	max_block_data_size: Option<u64>,
+) -> ServiceHandle
+	where
+		C: Collators + Send + Sync + 'static,
+		<C::Collation as IntoFuture>::Future: Send + 'static,
+		P: BlockchainEvents<Block> + BlockBody<Block>,
+		P: ProvideRuntimeApi + HeaderBackend<Block> + Send + Sync + 'static,
+		P::Api: ParachainHost<Block> + BlockBuilder<Block> + AuraApi<Block, AuraId>,
+		N: Network + Send + Sync + 'static,
+		N::TableRouter: Send + 'static,
+		<N::BuildTableRouter as IntoFuture>::Future: Send + 'static,
+		SC: SelectChain<Block> + 'static,
+{
+	unimplemented!()
+}
+
+/// Create and start a new instance of the attestation service.
+#[cfg(not(target_os = "unknown"))]
 pub(crate) fn start<C, N, P, SC>(
 	client: Arc<P>,
 	select_chain: SC,

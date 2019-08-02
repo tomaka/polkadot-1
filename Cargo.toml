@@ -25,6 +25,7 @@ members = [
 	"erasure-coding",
 	"executor",
 	"network",
+	"node-browser",
 	"primitives",
 	"runtime",
 	"service",

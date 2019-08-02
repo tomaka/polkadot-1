@@ -16,7 +16,8 @@
 
 //! Dynamic inclusion threshold over time.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use wasm_timer::Instant;
 
 fn duration_to_micros(duration: &Duration) -> u64 {
 	duration.as_secs() * 1_000_000 + (duration.subsec_nanos() / 1000) as u64

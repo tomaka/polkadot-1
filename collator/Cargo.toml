@@ -20,6 +20,9 @@ polkadot-cli = { path = "../cli" }
 polkadot-network = { path = "../network" }
 polkadot-validation = { path = "../validation" }
 log = "0.4"
+tokio-timer = "0.2"
+
+[target.'cfg(not(target_os = "unknown"))'.dependencies]
 tokio = "0.1.7"
 
 [dev-dependencies]

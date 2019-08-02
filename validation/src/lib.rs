@@ -29,7 +29,7 @@
 //!
 //! Groups themselves may be compromised by malicious authorities.
 
-use std::{collections::{HashMap, HashSet}, pin::Pin, sync::Arc, time::{self, Duration, Instant}};
+use std::{collections::{HashMap, HashSet}, pin::Pin, sync::Arc, time::{self, Duration}};
 
 use aura::{SlotDuration, AuraApi};
 use client::{BlockchainEvents, BlockBody};
@@ -49,7 +49,7 @@ use primitives::{Pair, ed25519};
 use runtime_primitives::{
 	traits::{ProvideRuntimeApi, Header as HeaderT, DigestFor}, ApplyError
 };
-use futures_timer::{Delay, Interval};
+use wasm_timer::{Delay, Interval, Instant};
 use transaction_pool::txpool::{Pool, ChainApi as PoolChainApi};
 
 use attestation_service::ServiceHandle;
@@ -73,6 +73,8 @@ pub use self::shared_table::{
 	SharedTable, ParachainWork, PrimedParachainWork, Validated, Statement, SignedStatement,
 	GenericStatement,
 };
+
+#[cfg(not(target_os = "unknown"))]
 pub use parachain::wasm_executor::{run_worker as run_validation_worker};
 
 mod attestation_service;
@@ -524,7 +526,7 @@ impl<C, N, P, SC, TxApi> consensus::Environment<Block> for ProposerFactory<C, N,
 	type Error = Error;
 
 	fn init(
-		&self,
+		&mut self,
 		parent_header: &Header,
 	) -> Result<Self::Proposer, Error> {
 		let parent_hash = parent_header.hash();
@@ -575,7 +577,7 @@ impl<C, TxApi> consensus::Proposer<Block> for Proposer<C, TxApi> where
 	type Error = Error;
 	type Create = Either<CreateProposal<C, TxApi>, future::Ready<Result<Block, Error>>>;
 
-	fn propose(&self,
+	fn propose(&mut self,
 		inherent_data: InherentData,
 		inherent_digests: DigestFor<Block>,
 		max_duration: Duration,

@@ -18,7 +18,7 @@
 
 use parity_codec::{Encode, Decode};
 use kvdb::{KeyValueDB, DBTransaction};
-use kvdb_rocksdb::{Database, DatabaseConfig};
+//use kvdb_rocksdb::{Database, DatabaseConfig};
 use polkadot_primitives::Hash;
 use polkadot_primitives::parachain::{Id as ParaId, BlockData, Extrinsic};
 use log::warn;
@@ -72,8 +72,8 @@ pub struct Store {
 
 impl Store {
 	/// Create a new `Store` with given config on disk.
-	pub fn new(config: Config) -> io::Result<Self> {
-		let mut db_config = DatabaseConfig::with_columns(Some(columns::NUM_COLUMNS));
+	pub fn new(_config: Config) -> io::Result<Self> {
+		/*let mut db_config = DatabaseConfig::with_columns(Some(columns::NUM_COLUMNS));
 		db_config.memory_budget = config.cache_size;
 
 		let path = config.path.to_str().ok_or_else(|| io::Error::new(
@@ -85,7 +85,8 @@ impl Store {
 
 		Ok(Store {
 			inner: Arc::new(db),
-		})
+		})*/
+		Ok(Self::new_in_memory())
 	}
 
 	/// Create a new `Store` in-memory. Useful for tests.
