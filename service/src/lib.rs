@@ -31,7 +31,7 @@ use grandpa::{self, FinalityProofProvider as GrandpaFinalityProofProvider};
 use inherents::InherentDataProviders;
 use log::info;
 pub use service::{AbstractService, Roles, PruningMode, TransactionPoolOptions, Error};
-pub use service::{ServiceBuilderExport, ServiceBuilderImport, ServiceBuilderRevert};
+pub use service::{ServiceBuilderExport, ServiceBuilderImport, ServiceBuilderRevert, config::DatabaseConfig};
 pub use service::config::full_version_from_strs;
 pub use client::{backend::Backend, runtime_api::{Core as CoreApi, ConstructRuntimeApi}, ExecutionStrategy, CallExecutor};
 pub use consensus_common::SelectChain;
@@ -146,7 +146,11 @@ pub fn new_full(config: Configuration<CustomConfiguration, GenesisConfig>)
 	let is_authority = config.roles.is_authority() && !is_collator;
 	let force_authoring = config.force_authoring;
 	let max_block_data_size = config.custom.max_block_data_size;
-	let db_path = config.database_path.clone();
+	let db_path = if let DatabaseConfig::Path { ref path, .. } = config.database {
+		path.clone()
+	} else {
+		panic!()
+	};
 	let disable_grandpa = config.disable_grandpa;
 	let name = config.name.clone();
 
@@ -266,7 +270,7 @@ pub fn new_full(config: Configuration<CustomConfiguration, GenesisConfig>)
 		};
 
 		let babe = babe::start_babe(babe_config)?;
-		service.spawn_essential_task(babe);
+		service.spawn_essential_task("babe", babe);
 	}
 
 	// if the node isn't actively participating in consensus then it doesn't
@@ -304,7 +308,7 @@ pub fn new_full(config: Configuration<CustomConfiguration, GenesisConfig>)
 			telemetry_on_connect: Some(service.telemetry_on_connect_stream()),
 			voting_rule: grandpa::VotingRulesBuilder::default().build(),
 		};
-		service.spawn_essential_task(grandpa::run_grandpa_voter(grandpa_config)?);
+		service.spawn_essential_task("grandpa-voter", grandpa::run_grandpa_voter(grandpa_config)?);
 	} else {
 		grandpa::setup_disabled_grandpa(
 			service.client(),

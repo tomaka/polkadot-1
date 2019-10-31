@@ -51,6 +51,7 @@ use std::time::Duration;
 
 use futures::{future, Stream, Future, IntoFuture};
 use futures03::{TryStreamExt as _, StreamExt as _};
+use futures_diagnose_exec::Future01Ext as _;
 use log::{warn, error};
 use client::BlockchainEvents;
 use primitives::{Pair, Blake2Hasher};
@@ -448,7 +449,7 @@ impl<P, E> Worker for CollationNode<P, E> where
 					}
 				});
 
-				tokio::spawn(silenced.select(inner_exit.clone()).then(|_| Ok(())));
+				tokio::spawn(silenced.with_diagnostics("collator-work").select(inner_exit.clone()).then(|_| Ok(())));
 				Ok(())
 			});
 

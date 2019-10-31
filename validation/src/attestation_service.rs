@@ -32,6 +32,7 @@ use consensus::SelectChain;
 use availability_store::Store as AvailabilityStore;
 use futures::prelude::*;
 use futures03::{TryStreamExt as _, StreamExt as _};
+use futures_diagnose_exec::Future01Ext as _;
 use log::error;
 use polkadot_primitives::{Block, BlockId};
 use polkadot_primitives::parachain::{CandidateReceipt, ParachainHost};
@@ -188,7 +189,7 @@ pub(crate) fn start<C, N, P, SC>(
 				.then(|_| Ok(()))
 		};
 
-		runtime.spawn(notifications);
+		runtime.spawn(notifications.with_diagnostics("old-sessions-pruning"));
 		if let Err(_) = thread_pool.execute(Box::new(prune_old_sessions)) {
 			error!("Failed to spawn old sessions pruning task");
 		}
@@ -198,7 +199,7 @@ pub(crate) fn start<C, N, P, SC>(
 			.then(|_| Ok(()));
 
 		// spawn this on the tokio executor since it's fine on a thread pool.
-		if let Err(_) = thread_pool.execute(Box::new(prune_available)) {
+		if let Err(_) = thread_pool.execute(Box::new(prune_available.with_diagnostics("available-pruning"))) {
 			error!("Failed to spawn available pruning task");
 		}
 

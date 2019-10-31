@@ -34,6 +34,7 @@ use polkadot_primitives::parachain::{
 use crate::gossip::{RegisteredMessageValidator, GossipMessage, GossipStatement};
 
 use futures::prelude::*;
+use futures_diagnose_exec::Future01Ext as _;
 use parking_lot::Mutex;
 use log::{debug, trace};
 
@@ -174,7 +175,7 @@ impl<P: ProvideRuntimeApi + Send + Sync + 'static, E, N, T> Router<P, E, N, T> w
 				if let Some(work) = producer.map(|p| self.create_work(c_hash, p)) {
 					trace!(target: "validation", "driving statement work to completion");
 					let work = work.select2(self.fetcher.exit().clone()).then(|_| Ok(()));
-					self.fetcher.executor().spawn(work);
+					self.fetcher.executor().spawn(work.with_diagnostics("network-validation"));
 				}
 			}
 		}
