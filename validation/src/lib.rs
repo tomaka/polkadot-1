@@ -54,6 +54,7 @@ use transaction_pool::txpool::{Pool, ChainApi as PoolChainApi};
 use attestation_service::ServiceHandle;
 use futures::prelude::*;
 use futures03::{future::{self, Either, FutureExt}, task::Context, stream::StreamExt};
+use futures_diagnose_exec::Future01Ext as _;
 use collation::CollationFetch;
 use dynamic_inclusion::DynamicInclusion;
 use inherents::InherentData;
@@ -396,6 +397,7 @@ impl<C, N, P> ParachainValidation<C, N, P> where
 
 		let cancellable_work = build_router
 			.into_future()
+			.with_diagnostics("table-router")
 			.map_err(|e| {
 				warn!(target: "validation" , "Failed to build table router: {:?}", e);
 			})

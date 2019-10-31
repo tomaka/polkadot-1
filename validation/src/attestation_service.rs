@@ -189,8 +189,8 @@ pub(crate) fn start<C, N, P, SC>(
 				.then(|_| Ok(()))
 		};
 
-		runtime.spawn(notifications.with_diagnostics("old-sessions-pruning"));
-		if let Err(_) = thread_pool.execute(Box::new(prune_old_sessions)) {
+		runtime.spawn(notifications.with_diagnostics("pruning-notifs"));
+		if let Err(_) = thread_pool.execute(Box::new(prune_old_sessions.with_diagnostics("old-sessions-pruning"))) {
 			error!("Failed to spawn old sessions pruning task");
 		}
 
