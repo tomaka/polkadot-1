@@ -43,20 +43,6 @@ impl cli::IntoExit for Worker {
 	}
 }
 
-impl cli::Worker for Worker {
-	type Work = <Self as cli::IntoExit>::Exit;
-	fn work<S, SC, B, CE>(self, _: &S, _: TaskExecutor) -> Self::Work
-	where S: AbstractService<Block = service::Block, RuntimeApi = service::RuntimeApi,
-		Backend = B, SelectChain = SC,
-		NetworkSpecialization = service::PolkadotProtocol, CallExecutor = CE>,
-		SC: service::SelectChain<service::Block> + 'static,
-		B: service::Backend<service::Block, service::Blake2Hasher> + 'static,
-		CE: service::CallExecutor<service::Block, service::Blake2Hasher> + Clone + Send + Sync + 'static {
-		use cli::IntoExit;
-		self.into_exit()
-	}
-}
-
 fn main() -> Result<(), cli::error::Error> {
 	let version = VersionInfo {
 		name: "Parity Polkadot",
@@ -68,5 +54,10 @@ fn main() -> Result<(), cli::error::Error> {
 		support_url: "https://github.com/paritytech/polkadot/issues/new",
 	};
 
-	cli::run(Worker, version)
+	let exit = Worker.into_exit();		// TODO: remove Worker entirely
+
+	match cli::run(version) {
+		cli::Run(runner) => runner.run_until(exit),
+		cli::Other(runner) => runner.run_until(exit),
+	}
 }

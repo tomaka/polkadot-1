@@ -477,7 +477,7 @@ pub fn run_collator<P, E>(
 	para_id: ParaId,
 	exit: E,
 	key: Arc<CollatorPair>,
-	version: VersionInfo,
+	version: &VersionInfo,
 ) -> polkadot_cli::error::Result<()> where
 	P: BuildParachainContext + Send + 'static,
 	P::ParachainContext: Send + 'static,
@@ -486,7 +486,16 @@ pub fn run_collator<P, E>(
 	E::Future: Send + Clone + Sync + 'static,
 {
 	let node_logic = CollationNode { build_parachain_context, exit: exit.into_future(), para_id, key };
-	polkadot_cli::run(node_logic, version)
+
+	let cmd = match polkadot_cli::run(version) {
+		polkadot_cli::Run::Node(cmd) => cmd,
+		polkadot_cli::Run::Other(cmd) => return cmd.run_until(exit),
+	};
+
+	let mut config = CustomConfiguration::default();
+	config.collating_for = Some((key.public(), para_id));
+
+	cmd.run_until(config, exit)
 }
 
 #[cfg(test)]

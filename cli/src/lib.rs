@@ -25,7 +25,7 @@ use chain_spec::ChainSpec;
 use futures::Future;
 use tokio::runtime::Runtime;
 use std::sync::Arc;
-use log::{info, error};
+use log::info;
 use structopt::StructOpt;
 
 pub use service::{
@@ -86,46 +86,123 @@ struct ValidationWorkerCommand {
 	pub mem_id: String,
 }
 
-/// Parses polkadot specific CLI arguments and run the service.
-pub fn run<W>(worker: W, version: cli::VersionInfo) -> error::Result<()> where
-	W: Worker,
-{
-	match cli::parse_and_prepare::<PolkadotSubCommands, NoCustom, _>(&version, "parity-polkadot", std::env::args()) {
-		cli::ParseAndPrepare::Run(cmd) => cmd.run(load_spec, worker,
-		|worker, _cli_args, _custom_args, mut config| {
+/// Returned by the [`run`] function. Allows performing the actual running.
+#[must_use]
+pub enum Run<'a> {
+	/// The user wants to start the Polkadot node.
+	Node(NodeRun<'a>),
+	/// The user wants to execute a sub-command (exporting/importing blocks, purging chain, ...).
+	Other(OtherRun<'a>),
+}
+
+/// Returned by the [`run`] function when the user wants to start the Polkadot node. Allows
+/// performing the actual running.
+pub struct NodeRun<'a> {
+	version: &'a cli::VersionInfo,
+	inner: cli::ParseAndPrepareRun<'a, NoCustom>,
+}
+
+/// Returned by the [`run`] function when the user wants to execute a sub-command. Allows
+/// performing the actual running.
+pub struct OtherRun<'a> {
+	inner: OtherRunInner<'a>,
+}
+
+enum OtherRunInner<'a> {
+	BuildSpec(cli::ParseAndPrepareBuildSpec<'a>),
+	Export(cli::ParseAndPrepareExport<'a>),
+	Import(cli::ParseAndPrepareImport<'a>),
+	Purge(cli::ParseAndPreparePurge<'a>),
+	Revert(cli::ParseAndPrepareRevert<'a>),
+	ValidationWorker(ValidationWorkerCommand),
+}
+
+/// Parses polkadot specific CLI arguments and returns a `Run` object corresponding to what the
+/// user passed as CLI options.
+pub fn run(version: &cli::VersionInfo) -> Run {
+	let cmd = cli::parse_and_prepare::<PolkadotSubCommands, NoCustom, _>(
+		&version,
+		"parity-polkadot",
+		std::env::args()
+	);
+
+	match cmd {
+		cli::ParseAndPrepare::Run(inner) => Run::Node(NodeRun {
+			version,
+			inner,
+		}),
+		cli::ParseAndPrepare::BuildSpec(cmd) => Run::Other(OtherRun {
+			inner: OtherRunInner::BuildSpec(cmd),
+		}),
+		cli::ParseAndPrepare::ExportBlocks(cmd) => Run::Other(OtherRun {
+			inner: OtherRunInner::Export(cmd),
+		}),
+		cli::ParseAndPrepare::ImportBlocks(cmd) => Run::Other(OtherRun {
+			inner: OtherRunInner::Import(cmd),
+		}),
+		cli::ParseAndPrepare::PurgeChain(cmd) => Run::Other(OtherRun {
+			inner: OtherRunInner::Purge(cmd),
+		}),
+		cli::ParseAndPrepare::RevertChain(cmd) => Run::Other(OtherRun {
+			inner: OtherRunInner::Revert(cmd),
+		}),
+		cli::ParseAndPrepare::CustomCommand(PolkadotSubCommands::ValidationWorker(cmd)) =>
+			Run::Other(OtherRun {
+				inner: OtherRunInner::ValidationWorker(cmd),
+			}),
+	}
+}
+
+impl<'a> NodeRun<'a> {
+	/// Runs the command. Runs the node until the `until` is triggered.
+	pub fn run_until(
+		self,
+		custom_config: service::CustomConfiguration,
+		until: impl cli::IntoExit
+	) -> error::Result<()> {
+		let version = self.version;
+		self.inner.run(load_spec, until, |until, _cli_args, _custom_args, mut config| {
 			info!("{}", version.name);
 			info!("  version {}", config.full_version());
 			info!("  by {}, 2017-2019", version.author);
 			info!("Chain specification: {}", config.chain_spec.name());
 			info!("Node name: {}", config.name);
 			info!("Roles: {}", display_role(&config));
-			config.custom = worker.configuration();
+			config.custom = custom_config;
 			let runtime = Runtime::new().map_err(|e| format!("{:?}", e))?;
 			match config.roles {
 				service::Roles::LIGHT =>
 					run_until_exit(
 						runtime,
 						service::new_light(config).map_err(|e| format!("{:?}", e))?,
-						worker
+						until
 					),
 				_ => run_until_exit(
 						runtime,
 						service::new_full(config).map_err(|e| format!("{:?}", e))?,
-						worker
+						until
 					),
 			}.map_err(|e| format!("{:?}", e))
-		}),
-		cli::ParseAndPrepare::BuildSpec(cmd) => cmd.run(load_spec),
-		cli::ParseAndPrepare::ExportBlocks(cmd) => cmd.run_with_builder::<(), _, _, _, _, _, _>(|config|
-			Ok(service::new_chain_ops(config)?), load_spec, worker),
-		cli::ParseAndPrepare::ImportBlocks(cmd) => cmd.run_with_builder::<(), _, _, _, _, _, _>(|config|
-			Ok(service::new_chain_ops(config)?), load_spec, worker),
-		cli::ParseAndPrepare::PurgeChain(cmd) => cmd.run(load_spec),
-		cli::ParseAndPrepare::RevertChain(cmd) => cmd.run_with_builder::<(), _, _, _, _, _>(|config|
-			Ok(service::new_chain_ops(config)?), load_spec),
-		cli::ParseAndPrepare::CustomCommand(PolkadotSubCommands::ValidationWorker(args)) => {
-			service::run_validation_worker(&args.mem_id)?;
-			Ok(())
+		})
+	}
+}
+
+impl<'a> OtherRun<'a> {
+	/// Runs the other command.
+	pub fn run_until(self, until: impl cli::IntoExit) -> error::Result<()> {
+		match self.inner {
+			OtherRunInner::BuildSpec(cmd) => cmd.run(load_spec),
+			OtherRunInner::Export(cmd) => cmd.run_with_builder::<(), _, _, _, _, _, _>(|config|
+				Ok(service::new_chain_ops(config)?), load_spec, until),
+			OtherRunInner::Import(cmd) => cmd.run_with_builder::<(), _, _, _, _, _, _>(|config|
+				Ok(service::new_chain_ops(config)?), load_spec, until),
+			OtherRunInner::Purge(cmd) => cmd.run(load_spec),
+			OtherRunInner::Revert(cmd) => cmd.run_with_builder::<(), _, _, _, _, _>(|config|
+				Ok(service::new_chain_ops(config)?), load_spec),
+			OtherRunInner::ValidationWorker(args) => {
+				service::run_validation_worker(&args.mem_id)?;
+				Ok(())
+			}
 		}
 	}
 }
@@ -133,7 +210,7 @@ pub fn run<W>(worker: W, version: cli::VersionInfo) -> error::Result<()> where
 fn run_until_exit<T, SC, B, CE, W>(
 	mut runtime: Runtime,
 	service: T,
-	worker: W,
+	until: W,
 ) -> error::Result<()>
 	where
 		T: AbstractService<Block = service::Block, RuntimeApi = service::RuntimeApi,
@@ -141,21 +218,21 @@ fn run_until_exit<T, SC, B, CE, W>(
 		SC: service::SelectChain<service::Block> + 'static,
 		B: service::Backend<service::Block, service::Blake2Hasher> + 'static,
 		CE: service::CallExecutor<service::Block, service::Blake2Hasher> + Clone + Send + Sync + 'static,
-		W: Worker,
+		W: IntoExit,
 {
 	let (exit_send, exit) = exit_future::signal();
 
-	let executor = runtime.executor();
 	let informant = cli::informant::build(&service);
-	executor.spawn(exit.until(informant).map(|_| ()));
+	runtime.executor().spawn(exit.until(informant).map(|_| ()));
 
 	// we eagerly drop the service so that the internal exit future is fired,
 	// but we need to keep holding a reference to the global telemetry guard
 	let _telemetry = service.telemetry();
 
-	let work = worker.work(&service, Arc::new(executor));
-	let service = service.map_err(|err| error!("Error while running Service: {}", err));
-	let _ = runtime.block_on(service.select(work));
+	let exit = until.into_exit().map_err(|_| error::Error::Other("Exit future failed.".into()));
+	let service = service.map_err(|err| error::Error::Service(err));
+	let select = service.select(exit).map(|_| ()).map_err(|(err, _)| err);
+	let _ = runtime.block_on(select);
 	exit_send.fire();
 
 	Ok(())
