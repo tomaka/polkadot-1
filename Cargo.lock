@@ -4846,6 +4846,7 @@ dependencies = [
  "polkadot-node-subsystem",
  "polkadot-node-subsystem-test-helpers",
  "polkadot-primitives",
+ "sc-authority-discovery",
  "sc-network",
  "sp-core",
  "sp-keyring",
@@ -5024,6 +5025,7 @@ dependencies = [
  "polkadot-node-primitives",
  "polkadot-primitives",
  "sc-network",
+ "sp-authority-discovery",
  "sp-core",
  "sp-runtime",
 ]

@@ -36,7 +36,8 @@ use polkadot_subsystem::messages::{
 };
 use polkadot_primitives::v1::{Block, Hash, ValidatorId};
 use polkadot_node_network_protocol::{
-	ObservedRole, ReputationChange, PeerId, PeerSet, View, NetworkBridgeEvent, v1 as protocol_v1
+	AuthorityId, ObservedRole, Multiaddr, ReputationChange, PeerId, PeerSet, View, NetworkBridgeEvent,
+	v1 as protocol_v1
 };
 
 use std::collections::hash_map::{HashMap, Entry as HEntry};
@@ -89,7 +90,7 @@ pub fn notifications_protocol_info() -> Vec<(ConsensusEngineId, std::borrow::Cow
 }
 
 /// An action to be carried out by the network.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum NetworkAction {
 	/// Note a change in reputation for a peer.
 	ReputationChange(PeerId, ReputationChange),
@@ -110,6 +111,27 @@ pub trait Network: Send + 'static {
 		Box<dyn Sink<NetworkAction, Error = SubsystemError> + Send + 'a>
 	>;
 
+	/// Get the addresses for the given [`AuthorityId`], or `None` if the information is unknown.
+	///
+	/// [`Multiaddr`]esses returned always include a [`libp2p::core::multiaddr:Protocol::P2p`]
+	/// component.
+	///
+	/// The implementation is expected to finish in a short amount of time and should therefore
+	/// load the addresses from some existing cache, rather than performing network queries.
+	fn get_addresses_by_authority_id<'a>(&'a mut self, authority: &AuthorityId)
+		-> Pin<Box<dyn Future<Output = Option<Vec<Multiaddr>>> + Send + 'a>>;
+
+	/// Get the [`AuthorityId`] for the given [`PeerId`].
+	///
+	/// A return value of `None` means "unknown". Considering the constraint that this method
+	/// call must finish in a small amount of time, and that validators can refresh their `PeerId`
+	/// at any time, it is not possible to guarantee that a certain `PeerId` is not an authority.
+	///
+	/// The implementation is expected to finish in a short amount of time and should therefore
+	/// load the addresses from some existing cache, rather than performing network queries.
+	fn get_authority_id_by_peer_id<'a>(&'a mut self, peer_id: &PeerId)
+		-> Pin<Box<dyn Future<Output = Option<AuthorityId>> + Send + 'a>>;
+
 	/// Report a given peer as either beneficial (+) or costly (-) according to the given scalar.
 	fn report_peer(&mut self, who: PeerId, cost_benefit: ReputationChange)
 		-> BoxFuture<SubsystemResult<()>>
@@ -129,9 +151,9 @@ pub trait Network: Send + 'static {
 	}
 }
 
-impl Network for Arc<sc_network::NetworkService<Block, Hash>> {
+impl Network for (Arc<sc_network::NetworkService<Block, Hash>>, sc_authority_discovery::Service) {
 	fn event_stream(&mut self) -> BoxStream<'static, NetworkEvent> {
-		sc_network::NetworkService::event_stream(self, "polkadot-network-bridge").boxed()
+		sc_network::NetworkService::event_stream(&mut self.0, "polkadot-network-bridge").boxed()
 	}
 
 	fn action_sink<'a>(&'a mut self)
@@ -168,7 +190,8 @@ impl Network for Arc<sc_network::NetworkService<Block, Hash>> {
 								message,
 							),
 						}
-					}
+					},
+					NetworkAction::ConnectAndRequest(_, _, _) => todo!(),
 				}
 
 				Ok(())
@@ -183,7 +206,19 @@ impl Network for Arc<sc_network::NetworkService<Block, Hash>> {
 			}
 		}
 
-		Box::pin(ActionSink(&**self))
+		Box::pin(ActionSink(&self.0))
+	}
+
+	fn get_addresses_by_authority_id<'a>(&'a mut self, authority: &AuthorityId)
+		-> Pin<Box<dyn Future<Output = Option<Vec<Multiaddr>>> + Send + 'a>>
+	{
+		self.1.get_addresses_by_authority_id(authority.clone()).boxed()
+	}
+
+	fn get_authority_id_by_peer_id<'a>(&'a mut self, peer_id: &PeerId)
+		-> Pin<Box<dyn Future<Output = Option<AuthorityId>> + Send + 'a>>
+	{
+		self.1.get_authority_id_by_peer_id(peer_id.clone()).boxed()
 	}
 }
 
@@ -603,11 +638,17 @@ async fn run_network<N: Network>(
 				).await?;
 			}
 
-			Action::PeerConnected(peer_set, peer, role) => {
+			Action::PeerConnected(peer_set, peer, mut role) => {
 				let peer_map = match peer_set {
 					PeerSet::Validation => &mut validation_peers,
 					PeerSet::Collation => &mut collation_peers,
 				};
+
+				if matches!(role, ObservedRole::UnauthenticatedAuthority) {
+					if let Some(authority_id) = net.get_authority_id_by_peer_id(&peer).await {
+						role = ObservedRole::Authority(authority_id);
+					}
+				}
 
 				match peer_map.entry(peer.clone()) {
 					HEntry::Occupied(_) => continue,
